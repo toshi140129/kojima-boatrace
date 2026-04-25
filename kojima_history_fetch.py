@@ -52,6 +52,7 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
 
 # 1レース分のヘッダ（1行=1レース、横展開）
+# v2: チルト / 展示進入 / 実進入コース を追加（6艇分 × 3 = 18 columns 増加）
 RESULTS_HEADER = (
     [
         "日付", "曜日", "レース番号",
@@ -65,7 +66,9 @@ RESULTS_HEADER = (
         for col in (
             "選手名", "級別", "全国勝率", "全国2連率", "当地勝率",
             "今節成績", "モーター2連率", "ボート2連率",
-            "展示タイム", "展示ST", "F数", "L数",
+            "展示タイム", "展示ST", "チルト",
+            "展示進入", "実進入",
+            "F数", "L数",
         )
     ]
 )
@@ -228,8 +231,11 @@ def parse_beforeinfo(html):
                         elif "水温" in label:
                             weather["water_temp"] = m.group(1)
 
-        # 展示タイム: table.is-w748 の各 tbody.is-fs12 から
-        exhibitions = [{"ex_time": "", "ex_st": ""} for _ in range(6)]
+        # 展示タイム + チルト: table.is-w748 の各 tbody.is-fs12 から
+        exhibitions = [
+            {"ex_time": "", "ex_st": "", "tilt": "", "ex_iri": ""}
+            for _ in range(6)
+        ]
         time_table = soup.select_one("table.is-w748")
         if time_table:
             tbodies = time_table.select("tbody.is-fs12")
@@ -238,40 +244,46 @@ def parse_beforeinfo(html):
                 if not first_tr:
                     continue
                 tds = first_tr.find_all("td")
-                # td[0]=艇番, [1]=写真, [2]=選手名, [3]=体重, [4]=展示タイム
+                # td[0]=艇番, [1]=写真, [2]=選手名, [3]=体重, [4]=展示タイム, [5]=チルト
                 if len(tds) >= 5:
                     m = re.search(r"\d+\.\d+", norm(tds[4].get_text(strip=True)))
                     if m:
                         exhibitions[i]["ex_time"] = m.group(0)
+                if len(tds) >= 6:
+                    tilt_text = norm(tds[5].get_text(strip=True))
+                    m = re.search(r"-?\d+\.\d+", tilt_text)
+                    if m:
+                        exhibitions[i]["tilt"] = m.group(0)
 
-        # 展示ST: table.is-w238 の進入順テーブル
+        # 展示ST + 展示進入順: table.is-w238 の進入順テーブル
+        # 行のインデックス（1〜6）= 進入コース
         st_table = soup.select_one("table.is-w238")
         if st_table:
-            for row in st_table.select("tbody tr"):
+            for ri, row in enumerate(st_table.select("tbody tr"), start=1):
                 num_node = row.select_one(".table1_boatImage1Number")
                 time_node = row.select_one(".table1_boatImage1Time")
-                if not (num_node and time_node):
+                if not num_node:
                     continue
-                # 艇番を class is-typeN から取得（DOMテキストは進入順表示用）
                 cls = " ".join(num_node.get("class", []))
                 m_b = re.search(r"is-type(\d+)", cls)
-                if not m_b:
+                if m_b:
+                    boat = int(m_b.group(1))
+                else:
                     m_b_text = re.search(r"\d", num_node.get_text())
                     if m_b_text:
                         boat = int(m_b_text.group(0))
                     else:
                         continue
-                else:
-                    boat = int(m_b.group(1))
                 if not (1 <= boat <= 6):
                     continue
-                st_text = norm(time_node.get_text(strip=True))
-                # ".08" → "0.08", "F.05" → "F0.05"
-                if st_text.startswith("."):
-                    st_text = "0" + st_text
-                elif st_text.startswith("F."):
-                    st_text = "F0" + st_text[1:]
-                exhibitions[boat - 1]["ex_st"] = st_text
+                exhibitions[boat - 1]["ex_iri"] = str(ri)
+                if time_node:
+                    st_text = norm(time_node.get_text(strip=True))
+                    if st_text.startswith("."):
+                        st_text = "0" + st_text
+                    elif st_text.startswith("F."):
+                        st_text = "F0" + st_text[1:]
+                    exhibitions[boat - 1]["ex_st"] = st_text
 
         return weather, exhibitions
     except Exception as e:
@@ -324,13 +336,15 @@ def parse_odds3t(html):
 # ---------- raceresult パース ----------
 
 def parse_raceresult(html):
-    """(p1, p2, p3, pay3t, ninki). データなしは全て''."""
+    """(p1, p2, p3, pay3t, ninki, actual_iri[6])。データなしは全て''."""
+    empty = ("", "", "", "", "", ["", "", "", "", "", ""])
     if not html or "データがありません" in html:
-        return ("", "", "", "", "")
+        return empty
     try:
         soup = BeautifulSoup(html, "html.parser")
         tables = soup.select("table.is-w495")
         p1 = p2 = p3 = pay = ninki = ""
+        actual_iri = ["", "", "", "", "", ""]
         if tables:
             for tr in tables[0].select("tbody tr"):
                 tds = tr.find_all("td")
@@ -351,10 +365,25 @@ def parse_raceresult(html):
                     if len(tds) >= 4:
                         ninki = norm(tds[3].get_text())
                     break
-        return (p1, p2, p3, pay, ninki)
+        # スタート情報テーブル: 進入コース順に艇番が並ぶ
+        for table in soup.select("table.is-w495"):
+            thead = table.find("thead")
+            if not thead or "スタート情報" not in thead.get_text():
+                continue
+            for ri, row in enumerate(table.select("tbody tr"), start=1):
+                num_node = row.select_one(".table1_boatImage1Number")
+                if not num_node:
+                    continue
+                cls = " ".join(num_node.get("class", []))
+                m_b = re.search(r"is-type(\d+)", cls)
+                if m_b:
+                    boat = int(m_b.group(1))
+                    if 1 <= boat <= 6:
+                        actual_iri[boat - 1] = str(ri)
+        return (p1, p2, p3, pay, ninki, actual_iri)
     except Exception as e:
         print(f"  raceresult parse error: {e}", file=sys.stderr, flush=True)
-        return ("", "", "", "", "")
+        return empty
 
 
 # ---------- 1レース分まとめ取得 ----------
@@ -444,7 +473,8 @@ def append_tide(rows):
 
 def race_to_results_row(date_label, rno, racers, weather, exhibitions, result, tide_class):
     weekday = WEEKDAYS[datetime.strptime(date_label, "%Y-%m-%d").weekday()]
-    p1, p2, p3, pay, ninki = result
+    p1, p2, p3, pay, ninki = result[:5]
+    actual_iri = result[5] if len(result) >= 6 else ["", "", "", "", "", ""]
     row = [
         date_label, weekday, rno,
         p1, p2, p3, pay, ninki,
@@ -459,7 +489,8 @@ def race_to_results_row(date_label, rno, racers, weather, exhibitions, result, t
             r.get("name", ""), r.get("grade", ""),
             r.get("zenkoku_win", ""), r.get("zenkoku_2", ""), r.get("touchi_win", ""),
             r.get("kosetsu", ""), r.get("motor_2", ""), r.get("boat_2", ""),
-            ex.get("ex_time", ""), ex.get("ex_st", ""),
+            ex.get("ex_time", ""), ex.get("ex_st", ""), ex.get("tilt", ""),
+            ex.get("ex_iri", ""), actual_iri[i] if i < len(actual_iri) else "",
             r.get("f_num", ""), r.get("l_num", ""),
         ]
     return row

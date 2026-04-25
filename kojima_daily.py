@@ -70,6 +70,22 @@ def git_push():
         print(f"git push 失敗: {e}")
 
 
+def run_morning_alert():
+    """LINE モーニングダイジェストを送信。kojima_alert.py --morning を呼ぶ"""
+    import sys
+    py = sys.executable
+    script = os.path.join(HERE, "kojima_alert.py")
+    if not os.path.exists(script):
+        return
+    try:
+        subprocess.run([py, script, "--morning"], cwd=HERE, check=False, timeout=300)
+        print("LINE モーニングアラート 実行完了")
+    except Exception as e:
+        print(f"LINE モーニングアラート エラー: {e}")
+
+
 if __name__ == "__main__":
     if run_yesterday():
         git_push()
+    # 前日結果取得の有無に関わらず、当日のモーニングダイジェストは毎朝送る
+    run_morning_alert()
