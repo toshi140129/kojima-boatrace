@@ -6,4 +6,6 @@ venv/
 .env
 .DS_Store
 fetch.log
+alert.log
+notified.json
 _sample_*.html

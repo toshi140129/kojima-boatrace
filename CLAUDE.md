@@ -5,7 +5,19 @@
 - Python 3.14 / Node.js インストール済み
 - リポジトリ: C:\Users\nagao\kojima-boatrace
 - データ: kojima_results.csv / kojima_odds.csv / kojima_tide.csv
-- タスクスケジューラで kojima_daily.py を毎朝自動実行
+- タスクスケジューラ登録済み（ログオン中のみ）
+  - `kojima_daily`: 毎朝08:00、前日分取得＆GitHub push
+  - `kojima_alert`: 10:00-21:00 / 15分間隔、当日レースの期待値判定→LINE通知
+  - Python: `C:\Users\nagao\AppData\Local\Python\pythoncore-3.14-64\python.exe`
+  - 手動実行: `Start-ScheduledTask -TaskName "kojima_daily"` / `kojima_alert`
+  - 確認: `Get-ScheduledTaskInfo -TaskName "kojima_alert"`
+
+## LINE 通知（kojima_alert.py）
+- LINE Messaging API（Bot Channel）方式。Channel access token と userId を `.env` に保存
+- `.env` は git 管理外（`.env.example` をコピーして使う）
+- 通知履歴: `notified.json`（git管理外、レース単位で重複防止）
+- ログ: `alert.log`（git管理外）
+- 判定閾値: 類似サンプル50件以上、上位確率8%以上、最大期待値100以上
 
 ## 場の特性
 - 児島競艇場 jcd=16
