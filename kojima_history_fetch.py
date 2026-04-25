@@ -362,10 +362,13 @@ def parse_raceresult(html):
 def fetch_race(args):
     date_str, rno = args
     base = f"https://www.boatrace.jp/owpc/pc/race"
+    # まずraceresultを取得して開催有無を判定。空なら3ページの取得をスキップ
+    result = parse_raceresult(fetch_html(f"{base}/raceresult?rno={rno}&jcd={JYOJO}&hd={date_str}"))
+    if not result[0]:
+        return (date_str, rno, [], {}, [], [], result)
     racelist = parse_racelist(fetch_html(f"{base}/racelist?rno={rno}&jcd={JYOJO}&hd={date_str}"))
     weather, exhibitions = parse_beforeinfo(fetch_html(f"{base}/beforeinfo?rno={rno}&jcd={JYOJO}&hd={date_str}"))
     odds = parse_odds3t(fetch_html(f"{base}/odds3t?rno={rno}&jcd={JYOJO}&hd={date_str}"))
-    result = parse_raceresult(fetch_html(f"{base}/raceresult?rno={rno}&jcd={JYOJO}&hd={date_str}"))
     return (date_str, rno, racelist, weather, exhibitions, odds, result)
 
 
