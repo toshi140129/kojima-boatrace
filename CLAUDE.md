@@ -18,6 +18,7 @@
 - 通知履歴: `notified.json`（git管理外、レース単位で重複防止）
 - ログ: `alert.log`（git管理外）
 - 判定閾値: 類似サンプル50件以上、上位確率8%以上、最大期待値100以上
+- 停止スイッチ: `.env` に `LINE_NOTIFY_ENABLED=0` で送信停止（2026-10-27 から停止中。タスク kojima_alert も Disabled。再開は `LINE_NOTIFY_ENABLED=1` に戻して `Enable-ScheduledTask -TaskName "kojima_alert"`）
 
 ## 場の特性
 - 児島競艇場 jcd=16

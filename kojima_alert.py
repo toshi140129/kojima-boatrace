@@ -104,7 +104,15 @@ def save_notified(notified):
         json.dump(sorted(notified), f, ensure_ascii=False, indent=2)
 
 
+def notify_enabled(env):
+    """.env の LINE_NOTIFY_ENABLED が 0/false/off なら LINE 送信を止める（再開は 1 に戻す）"""
+    return env.get("LINE_NOTIFY_ENABLED", "1").strip().lower() not in ("0", "false", "off", "no")
+
+
 def send_line(env, text):
+    if not notify_enabled(env):
+        log("LINE_NOTIFY_ENABLED=0 のため送信スキップ")
+        return False
     token = env.get("LINE_CHANNEL_ACCESS_TOKEN", "")
     user_id = env.get("LINE_USER_ID", "")
     if not token or not user_id:
@@ -593,6 +601,9 @@ def run_morning():
 
 
 def main():
+    if not notify_enabled(env_get()):
+        log("LINE_NOTIFY_ENABLED=0 のため児島のLINE通知は停止中（判定も実行しない）")
+        return
     if "--morning" in sys.argv:
         run_morning()
     else:
